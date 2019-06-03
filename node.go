@@ -52,6 +52,7 @@ type redisNode struct {
     conns	    list.List
     keepAlive	    int
     aliveTime	    time.Duration
+    password    string
 
     connTimeout	    time.Duration
     readTimeout	    time.Duration
@@ -101,7 +102,14 @@ func (node *redisNode) getConn() (*redisConn, error) {
 	    bw: bufio.NewWriter(c),
 	    readTimeout: node.readTimeout,
 	    writeTimeout: node.writeTimeout,
-	}
+    }
+    
+    if node.password != "" {
+        err = conn.auth(node.password)
+        if err != nil {
+            return nil, err
+        }
+    }
 
 	return conn, nil
     }
@@ -111,6 +119,26 @@ func (node *redisNode) getConn() (*redisConn, error) {
     node.mutex.Unlock()
 
     return elem.Value.(*redisConn), nil
+}
+
+func (conn *redisConn) auth(password string) (err error) {
+	if err = conn.send("AUTH", password); err != nil {
+		conn.shutdown()
+		return
+	}
+
+	if err = conn.flush(); err != nil {
+		conn.shutdown()
+		return
+	}
+
+	_, err = conn.receive()
+	if err != nil {
+		conn.shutdown()
+		return
+	}
+
+	return nil
 }
 
 func (node *redisNode) releaseConn(conn *redisConn) {
